@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Word Learner</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <h1>Word Learner</h1>
+      <button id="settingsBtn" class="icon-btn" title="Settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"></path>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Tabs -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="words">Words</button>
+      <button class="tab" data-tab="practice">Practice</button>
+      <button class="tab" data-tab="stats">Stats</button>
+    </nav>
+
+    <!-- Words Tab -->
+    <section id="words-tab" class="tab-content active">
+      <div id="words-empty" class="empty-state">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+        </svg>
+        <p>No words saved yet</p>
+        <span>Select text on any webpage to save words</span>
+      </div>
+      <div id="words-list" class="words-list"></div>
+    </section>
+
+    <!-- Practice Tab -->
+    <section id="practice-tab" class="tab-content">
+      <div id="practice-setup" class="practice-setup">
+        <div id="practice-no-words" class="empty-state" style="display: none;">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+            <path d="M2 17l10 5 10-5"></path>
+            <path d="M2 12l10 5 10-5"></path>
+          </svg>
+          <p>No words to practice</p>
+          <span>Save some words first, then come back to practice!</span>
+        </div>
+        <div id="practice-ready" style="display: none;">
+          <div class="daily-progress">
+            <div class="progress-ring">
+              <svg width="80" height="80">
+                <circle cx="40" cy="40" r="36" class="progress-bg"></circle>
+                <circle cx="40" cy="40" r="36" class="progress-fill" id="progress-circle"></circle>
+              </svg>
+              <div class="progress-text">
+                <span id="progress-count">0</span>/<span id="progress-goal">5</span>
+              </div>
+            </div>
+            <p>Today's Progress</p>
+          </div>
+          <button id="startPractice" class="btn btn-primary">Start Practice</button>
+        </div>
+      </div>
+
+      <div id="practice-session" class="practice-session" style="display: none;">
+        <div class="practice-word">
+          <label>Word to use:</label>
+          <h2 id="practice-word-text"></h2>
+        </div>
+        <div class="practice-hint" id="practice-hint" style="display: none;">
+          <label>Example sentence:</label>
+          <p id="practice-example"></p>
+        </div>
+        <button id="showHint" class="btn btn-secondary btn-small">Show Hint</button>
+
+        <div class="practice-input">
+          <label for="userSentence">Write a sentence using this word:</label>
+          <textarea id="userSentence" placeholder="Type your sentence here..." rows="3"></textarea>
+        </div>
+
+        <div class="practice-actions">
+          <button id="skipWord" class="btn btn-secondary">Skip</button>
+          <button id="submitSentence" class="btn btn-primary">Submit</button>
+        </div>
+
+        <div id="practice-feedback" class="practice-feedback" style="display: none;">
+          <div class="feedback-header">
+            <span class="feedback-icon"></span>
+            <span class="feedback-rating"></span>
+          </div>
+          <p class="feedback-text"></p>
+          <p class="feedback-suggestion"></p>
+          <button id="nextWord" class="btn btn-primary">Next Word</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stats Tab -->
+    <section id="stats-tab" class="tab-content">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon streak">🔥</div>
+          <div class="stat-value" id="stat-streak">0</div>
+          <div class="stat-label">Day Streak</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon total">📝</div>
+          <div class="stat-value" id="stat-total">0</div>
+          <div class="stat-label">Total Sentences</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon words">📚</div>
+          <div class="stat-value" id="stat-words">0</div>
+          <div class="stat-label">Words Saved</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon best">🏆</div>
+          <div class="stat-value" id="stat-best">0</div>
+          <div class="stat-label">Best Streak</div>
+        </div>
+      </div>
+
+      <div class="achievements-section">
+        <h3>Achievements</h3>
+        <div id="achievements-list" class="achievements-list"></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

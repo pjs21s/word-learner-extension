@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Word Learner Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Word Learner Settings</h1>
+      <p>Configure your learning preferences</p>
+    </header>
+
+    <main>
+      <!-- AI Status Section -->
+      <section class="settings-section">
+        <h2>AI Status</h2>
+        <div id="ai-status" class="ai-status">
+          <div class="status-indicator" id="ai-status-indicator"></div>
+          <span id="ai-status-text">Checking...</span>
+        </div>
+        <button id="downloadAI" class="btn btn-primary" style="display:none;">
+          Download AI Model
+        </button>
+
+        <div class="ai-info-box">
+          <h4>About Chrome Built-in AI</h4>
+          <p>This extension uses <strong>Gemini Nano</strong>, an AI model built into Chrome. Here's what you need to know:</p>
+          <ul>
+            <li><strong>Free &amp; Private</strong> - AI runs locally on your device, no data sent to servers</li>
+            <li><strong>Chrome 138+</strong> - Requires Chrome version 138 or later (desktop only)</li>
+            <li><strong>One-time download</strong> - Chrome downloads the AI model (~2GB) once in the background</li>
+            <li><strong>Shared model</strong> - The model is managed by Chrome and shared across extensions</li>
+          </ul>
+        </div>
+        <div id="ai-requirements" class="ai-requirements" style="display:none;">
+          <h4>Requirements:</h4>
+          <ul>
+            <li>Chrome 138+ (Desktop only)</li>
+            <li>Windows 10/11, macOS 13+, or Linux</li>
+            <li>Storage space for AI model (~2GB)</li>
+          </ul>
+          <p>
+            Check your Chrome version at <code>chrome://version</code>
+          </p>
+        </div>
+      </section>
+
+      <!-- Daily Goal Section -->
+      <section class="settings-section">
+        <h2>Daily Goal</h2>
+        <p class="section-description">
+          Set how many sentences you want to practice each day to maintain your streak.
+        </p>
+        <div class="form-group">
+          <label for="dailyGoal">Sentences per day</label>
+          <div class="goal-selector">
+            <button class="goal-btn" data-goal="3">3</button>
+            <button class="goal-btn" data-goal="5">5</button>
+            <button class="goal-btn" data-goal="10">10</button>
+            <button class="goal-btn" data-goal="15">15</button>
+          </div>
+          <div class="custom-goal">
+            <span>Or set a custom goal:</span>
+            <input type="number" id="dailyGoal" min="1" max="50" value="5">
+          </div>
+        </div>
+      </section>
+
+      <!-- Language Section -->
+      <section class="settings-section">
+        <h2>Language Preference</h2>
+        <p class="section-description">
+          Select the language you're learning to get more relevant feedback.
+        </p>
+        <div class="form-group">
+          <label for="targetLanguage">Target Language</label>
+          <select id="targetLanguage">
+            <option value="english">English</option>
+            <option value="spanish">Spanish</option>
+            <option value="french">French</option>
+            <option value="german">German</option>
+            <option value="japanese">Japanese</option>
+            <option value="chinese">Chinese</option>
+            <option value="korean">Korean</option>
+            <option value="portuguese">Portuguese</option>
+            <option value="italian">Italian</option>
+            <option value="russian">Russian</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- Data Management -->
+      <section class="settings-section">
+        <h2>Data Management</h2>
+        <p class="section-description">
+          Export or clear your saved data.
+        </p>
+        <div class="button-group">
+          <button id="exportData" class="btn btn-secondary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Export Data
+          </button>
+          <button id="clearData" class="btn btn-danger">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+            Clear All Data
+          </button>
+        </div>
+      </section>
+
+      <!-- Save Button -->
+      <div class="save-section">
+        <button id="saveSettings" class="btn btn-primary btn-large">
+          Save Settings
+        </button>
+        <p id="saveStatus" class="save-status"></p>
+      </div>
+    </main>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
