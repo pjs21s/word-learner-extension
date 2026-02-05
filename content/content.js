@@ -1,5 +1,16 @@
 // Content Script - Handles text selection and save button
 
+// Prevent double injection
+if (window.__wordLearnerInjected) {
+  console.log('[Word Learner] Already injected, skipping');
+} else {
+  window.__wordLearnerInjected = true;
+  console.log('[Word Learner] Content script loaded');
+  initWordLearner();
+}
+
+function initWordLearner() {
+
 let saveButton = null;
 
 // Create the floating save button
@@ -142,14 +153,16 @@ document.addEventListener('click', async (event) => {
   `;
 
   try {
+    console.log('[Word Learner] Saving word:', selection.text);
     const response = await chrome.runtime.sendMessage({
       action: 'saveWord',
       word: selection.text,
       context: selection.context,
       url: window.location.href
     });
+    console.log('[Word Learner] Response:', response);
 
-    if (response.success) {
+    if (response && response.success) {
       saveButton.classList.remove('loading');
       saveButton.classList.add('success');
       saveButton.innerHTML = `
@@ -164,34 +177,45 @@ document.addEventListener('click', async (event) => {
         saveButton.classList.remove('success');
       }, 1500);
     } else {
+      const errorMsg = response?.error || 'Unknown error - no response';
+      console.error('[Word Learner] Save failed:', errorMsg);
       saveButton.classList.remove('loading');
       saveButton.classList.add('error');
-      saveButton.innerHTML = `
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="8" x2="12" y2="12"></line>
-          <line x1="12" y1="16" x2="12.01" y2="16"></line>
-        </svg>
-        <span>${response.error || 'Error'}</span>
-      `;
 
-      setTimeout(() => {
-        hideButton();
-        saveButton.classList.remove('error');
-      }, 2000);
+      // Log error if not already logged
+      try {
+        if (!response?.logged) {
+          await chrome.runtime.sendMessage({
+            action: 'logError',
+            error: { message: errorMsg },
+            context: `saveWord failed: ${selection.text}`
+          });
+        }
+      } catch (logErr) {
+        console.error('[Word Learner] Failed to log error:', logErr);
+      }
+
+      showErrorWithFeedback(errorMsg, selection.text);
+      hideButton();
+      saveButton.classList.remove('error');
     }
   } catch (error) {
+    console.error('[Word Learner] Exception:', error);
     saveButton.classList.remove('loading');
-    saveButton.innerHTML = `
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10"></circle>
-        <line x1="12" y1="8" x2="12" y2="12"></line>
-        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-      </svg>
-      <span>Error</span>
-    `;
 
-    setTimeout(hideButton, 2000);
+    // Try to log the caught error
+    try {
+      await chrome.runtime.sendMessage({
+        action: 'logError',
+        error: { message: error.message, stack: error.stack },
+        context: `saveWord exception: ${selection.text}`
+      });
+    } catch (logErr) {
+      console.error('[Word Learner] Failed to log error:', logErr);
+    }
+
+    showErrorWithFeedback(error.message || 'Error saving word', selection.text);
+    hideButton();
   }
 
   // Clear selection
@@ -205,18 +229,33 @@ document.addEventListener('keydown', async (event) => {
     if (selection && selection.text.length > 0) {
       event.preventDefault();
 
-      const response = await chrome.runtime.sendMessage({
-        action: 'saveWord',
-        word: selection.text,
-        context: selection.context,
-        url: window.location.href
-      });
+      try {
+        const response = await chrome.runtime.sendMessage({
+          action: 'saveWord',
+          word: selection.text,
+          context: selection.context,
+          url: window.location.href
+        });
 
-      if (response.success) {
-        // Show brief notification
-        showNotification('Word saved!');
-      } else {
-        showNotification(response.error || 'Failed to save word');
+        if (response.success) {
+          showNotification('Word saved!');
+        } else {
+          if (!response.logged) {
+            await chrome.runtime.sendMessage({
+              action: 'logError',
+              error: { message: response.error || 'Unknown error' },
+              context: `saveWord (keyboard) failed: ${selection.text}`
+            });
+          }
+          showErrorWithFeedback(response.error || 'Failed to save word', selection.text);
+        }
+      } catch (error) {
+        await chrome.runtime.sendMessage({
+          action: 'logError',
+          error: { message: error.message, stack: error.stack },
+          context: `saveWord (keyboard) exception: ${selection.text}`
+        });
+        showErrorWithFeedback(error.message || 'Error saving word', selection.text);
       }
     }
   }
@@ -234,3 +273,94 @@ function showNotification(message) {
     setTimeout(() => notification.remove(), 300);
   }, 1500);
 }
+
+// Show error with feedback option
+function showErrorWithFeedback(errorMessage, word) {
+  // Remove existing error toast if any
+  const existing = document.getElementById('word-learner-error-toast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.id = 'word-learner-error-toast';
+  toast.innerHTML = `
+    <div class="wl-error-content">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+      </svg>
+      <div class="wl-error-text">
+        <strong>Error saving word</strong>
+        <span>${escapeHtml(errorMessage)}</span>
+      </div>
+    </div>
+    <div class="wl-error-actions">
+      <button class="wl-dismiss-btn">Dismiss</button>
+      <button class="wl-feedback-btn">Send Feedback</button>
+    </div>
+  `;
+  document.body.appendChild(toast);
+
+  // Animate in
+  requestAnimationFrame(() => {
+    toast.classList.add('visible');
+  });
+
+  // Dismiss button
+  toast.querySelector('.wl-dismiss-btn').addEventListener('click', () => {
+    toast.classList.remove('visible');
+    setTimeout(() => toast.remove(), 300);
+  });
+
+  // Feedback button
+  toast.querySelector('.wl-feedback-btn').addEventListener('click', async () => {
+    const errors = await chrome.runtime.sendMessage({ action: 'getErrors' });
+    const latestError = errors[0];
+
+    const feedbackData = {
+      error: errorMessage,
+      word: word,
+      url: window.location.href,
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent,
+      details: latestError ? JSON.stringify(latestError, null, 2) : 'No details'
+    };
+
+    const subject = encodeURIComponent('Word Learner Error Report');
+    const body = encodeURIComponent(`
+Error: ${feedbackData.error}
+Word: ${feedbackData.word}
+URL: ${feedbackData.url}
+Time: ${feedbackData.timestamp}
+
+Details:
+${feedbackData.details}
+
+Additional notes:
+(Please describe what you were doing when this happened)
+    `.trim());
+
+    // Open email client with pre-filled report
+    window.open(`mailto:jsgd1254@gmail.com?subject=${subject}&body=${body}`);
+
+    toast.classList.remove('visible');
+    setTimeout(() => toast.remove(), 300);
+  });
+
+  // Auto-dismiss after 10 seconds
+  setTimeout(() => {
+    if (document.body.contains(toast)) {
+      toast.classList.remove('visible');
+      setTimeout(() => toast.remove(), 300);
+    }
+  }, 10000);
+}
+
+// Escape HTML to prevent XSS
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+} // end initWordLearner

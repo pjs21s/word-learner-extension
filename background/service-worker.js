@@ -1,7 +1,8 @@
 // Background Service Worker - Handles API calls, storage, and badge updates
+console.log('[Word Learner] Service worker loaded');
 
 // Initialize default stats on install
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(async (details) => {
   const { stats } = await chrome.storage.local.get('stats');
   if (!stats) {
     await chrome.storage.local.set({
@@ -30,7 +31,44 @@ chrome.runtime.onInstalled.addListener(async () => {
   });
 
   updateBadge();
+
+  // Inject content scripts into all existing tabs on install/update
+  if (details.reason === 'install' || details.reason === 'update') {
+    injectContentScriptsToAllTabs();
+  }
 });
+
+// Inject content scripts into all existing tabs
+async function injectContentScriptsToAllTabs() {
+  console.log('[Word Learner] Injecting content scripts to existing tabs...');
+  try {
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      // Skip chrome://, edge://, about:, etc.
+      if (!tab.url || !tab.url.startsWith('http')) {
+        continue;
+      }
+      try {
+        // Inject CSS
+        await chrome.scripting.insertCSS({
+          target: { tabId: tab.id },
+          files: ['styles/content.css']
+        });
+        // Inject JS
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          files: ['content/content.js']
+        });
+        console.log('[Word Learner] Injected into tab:', tab.id, tab.url);
+      } catch (err) {
+        // Tab might be restricted (chrome pages, etc.)
+        console.log('[Word Learner] Could not inject into tab:', tab.id, err.message);
+      }
+    }
+  } catch (err) {
+    console.error('[Word Learner] Failed to inject content scripts:', err);
+  }
+}
 
 // Handle context menu click
 chrome.contextMenus.onClicked.addListener((info, tab) => {
@@ -41,7 +79,16 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
 // Listen for messages from content script and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  handleMessage(message, sender).then(sendResponse);
+  console.log('[Word Learner] Message received:', message.action);
+  handleMessage(message, sender)
+    .then(response => {
+      console.log('[Word Learner] Sending response for:', message.action);
+      sendResponse(response);
+    })
+    .catch(error => {
+      console.error('[Word Learner] handleMessage error:', error);
+      sendResponse({ success: false, error: error.message, logged: false });
+    });
   return true; // Keep channel open for async response
 });
 
@@ -86,6 +133,15 @@ async function handleMessage(message, sender) {
         return { error: e.message };
       }
 
+    case 'logError':
+      return await logError(message.error, message.context);
+
+    case 'getErrors':
+      return await getErrors();
+
+    case 'clearErrors':
+      return await clearErrors();
+
     default:
       return { error: 'Unknown action' };
   }
@@ -93,33 +149,47 @@ async function handleMessage(message, sender) {
 
 // Word management functions
 async function saveWord(word, context, sourceUrl) {
-  const { words } = await chrome.storage.local.get('words');
+  console.log('[Word Learner] saveWord called:', word);
+  try {
+    const { words } = await chrome.storage.local.get('words');
+    console.log('[Word Learner] Current words count:', words?.length);
 
-  // Check for duplicate
-  const exists = words.some(w => w.word.toLowerCase() === word.toLowerCase());
-  if (exists) {
-    return { success: false, error: 'Word already saved' };
+    // Check for duplicate
+    const exists = words.some(w => w.word.toLowerCase() === word.toLowerCase());
+    if (exists) {
+      console.log('[Word Learner] Word already exists');
+      return { success: false, error: 'Word already saved' };
+    }
+
+    // Extract base form using AI
+    console.log('[Word Learner] Extracting base form...');
+    const baseForm = await extractBaseForm(word, context);
+    console.log('[Word Learner] Base form:', baseForm);
+
+    const newWord = {
+      id: generateUUID(),
+      word: word,
+      baseForm: baseForm,
+      context: context,
+      sourceUrl: sourceUrl,
+      createdAt: Date.now(),
+      practiceCount: 0,
+      lastPracticed: null,
+      exampleSentence: null
+    };
+
+    words.push(newWord);
+    await chrome.storage.local.set({ words });
+
+    // Check for first_word achievement
+    await checkAchievement('first_word', words.length >= 1);
+
+    updateBadge();
+    return { success: true, word: newWord };
+  } catch (error) {
+    await logError(error, `saveWord: ${word}`);
+    return { success: false, error: error.message, logged: true };
   }
-
-  const newWord = {
-    id: generateUUID(),
-    word: word,
-    context: context,
-    sourceUrl: sourceUrl,
-    createdAt: Date.now(),
-    practiceCount: 0,
-    lastPracticed: null,
-    exampleSentence: null
-  };
-
-  words.push(newWord);
-  await chrome.storage.local.set({ words });
-
-  // Check for first_word achievement
-  await checkAchievement('first_word', words.length >= 1);
-
-  updateBadge();
-  return { success: true, word: newWord };
 }
 
 async function getWords() {
@@ -297,14 +367,42 @@ async function initAISession() {
 }
 
 async function promptAI(prompt) {
+  console.log('[Word Learner] promptAI called');
   try {
     const session = await initAISession();
+    console.log('[Word Learner] AI session ready, prompting...');
     const result = await session.prompt(prompt);
+    console.log('[Word Learner] AI response received');
     return { success: true, content: result };
   } catch (error) {
+    console.error('[Word Learner] promptAI error:', error);
     // Reset session on error so it can be recreated
     aiSession = null;
     return { error: error.message };
+  }
+}
+
+async function extractBaseForm(word, context) {
+  console.log('[Word Learner] extractBaseForm called for:', word);
+  try {
+    const prompt = `What is the base/dictionary form of the word "${word}"?
+Context: "${context}"
+Reply with ONLY the base form, nothing else. For example:
+- "running" → "run"
+- "went" → "go"
+- "better" → "good"
+- "cats" → "cat"`;
+
+    const result = await promptAI(prompt);
+    console.log('[Word Learner] AI result:', result);
+    if (result.success) {
+      return result.content.trim().toLowerCase();
+    }
+    console.log('[Word Learner] AI failed, using fallback');
+    return word.toLowerCase(); // Fallback to original word
+  } catch (error) {
+    console.error('[Word Learner] extractBaseForm error:', error);
+    return word.toLowerCase(); // Fallback on error
   }
 }
 
@@ -365,6 +463,39 @@ async function updateBadge() {
       chrome.action.setBadgeBackgroundColor({ color: '#3b82f6' });
     }
   }
+}
+
+// Error logging functions
+async function logError(error, context = '') {
+  const { errors = [] } = await chrome.storage.local.get('errors');
+
+  const errorEntry = {
+    id: generateUUID(),
+    message: error.message || String(error),
+    stack: error.stack || null,
+    context: context,
+    timestamp: Date.now(),
+    userAgent: navigator.userAgent
+  };
+
+  // Keep only last 20 errors
+  errors.unshift(errorEntry);
+  if (errors.length > 20) {
+    errors.pop();
+  }
+
+  await chrome.storage.local.set({ errors });
+  return errorEntry;
+}
+
+async function getErrors() {
+  const { errors = [] } = await chrome.storage.local.get('errors');
+  return errors;
+}
+
+async function clearErrors() {
+  await chrome.storage.local.set({ errors: [] });
+  return { success: true };
 }
 
 // Utility function

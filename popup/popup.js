@@ -5,17 +5,60 @@ let currentWord = null;
 let words = [];
 let stats = null;
 
-// Achievement definitions
-const ACHIEVEMENTS = {
-  first_word: { icon: '📖', name: 'First Word' },
-  first_sentence: { icon: '✍️', name: 'First Sentence' },
-  streak_3: { icon: '🔥', name: '3 Day Streak' },
-  streak_7: { icon: '💪', name: '7 Day Streak' },
-  streak_30: { icon: '🏆', name: '30 Day Streak' },
-  sentences_10: { icon: '📝', name: '10 Sentences' },
-  sentences_50: { icon: '📚', name: '50 Sentences' },
-  sentences_100: { icon: '🎯', name: '100 Sentences' },
-  perfect_10: { icon: '⭐', name: 'Perfect 10' }
+// Living Achievement definitions - evolving tiers
+const LIVING_ACHIEVEMENTS = {
+  streak: {
+    name: 'Streak Keeper',
+    icon: '🔥',
+    tiers: [
+      { name: 'Spark', min: 3, color: '#f97316' },
+      { name: 'Flame', min: 7, color: '#ef4444' },
+      { name: 'Fire', min: 14, color: '#dc2626' },
+      { name: 'Blaze', min: 30, color: '#3b82f6' },
+      { name: 'Inferno', min: 100, color: '#8b5cf6' }
+    ],
+    getValue: (stats, words) => stats.currentStreak,
+    format: (val) => `${val} day${val !== 1 ? 's' : ''}`
+  },
+  sentences: {
+    name: 'Sentence Crafter',
+    icon: '📝',
+    tiers: [
+      { name: 'Beginner', min: 1, color: '#78716c' },
+      { name: 'Writer', min: 10, color: '#22c55e' },
+      { name: 'Author', min: 50, color: '#3b82f6' },
+      { name: 'Poet', min: 100, color: '#f59e0b' },
+      { name: 'Master', min: 500, color: '#8b5cf6' }
+    ],
+    getValue: (stats, words) => stats.totalSentences,
+    format: (val) => `${val} sentence${val !== 1 ? 's' : ''}`
+  },
+  words: {
+    name: 'Word Collector',
+    icon: '📚',
+    tiers: [
+      { name: 'Curious', min: 1, color: '#78716c' },
+      { name: 'Reader', min: 10, color: '#22c55e' },
+      { name: 'Scholar', min: 25, color: '#3b82f6' },
+      { name: 'Librarian', min: 50, color: '#f59e0b' },
+      { name: 'Sage', min: 100, color: '#8b5cf6' }
+    ],
+    getValue: (stats, words) => words.length,
+    format: (val) => `${val} word${val !== 1 ? 's' : ''}`
+  },
+  perfect: {
+    name: 'Perfectionist',
+    icon: '⭐',
+    tiers: [
+      { name: 'Careful', min: 5, color: '#78716c' },
+      { name: 'Precise', min: 15, color: '#22c55e' },
+      { name: 'Excellent', min: 30, color: '#3b82f6' },
+      { name: 'Flawless', min: 50, color: '#f59e0b' },
+      { name: 'Legendary', min: 100, color: '#8b5cf6' }
+    ],
+    getValue: (stats, words) => stats.excellentCount || 0,
+    format: (val) => `${val} excellent`
+  }
 };
 
 // Initialize
@@ -106,7 +149,12 @@ function renderWords() {
   wordsList.innerHTML = sortedWords.map(word => `
     <div class="word-card" data-id="${word.id}">
       <div class="word-card-header">
-        <h3>${escapeHtml(word.word)}</h3>
+        <div class="word-title">
+          <h3>${escapeHtml(word.word)}</h3>
+          ${word.baseForm && word.baseForm !== word.word.toLowerCase() ? `
+            <span class="base-form">→ ${escapeHtml(word.baseForm)}</span>
+          ` : ''}
+        </div>
         <div class="word-card-actions">
           <button class="generate-btn" title="Generate example sentence">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -257,6 +305,16 @@ async function startPractice() {
   document.getElementById('practice-feedback').style.display = 'none';
 
   document.getElementById('practice-word-text').textContent = currentWord.word;
+
+  // Show base form if different from the original word
+  const baseFormEl = document.getElementById('practice-base-form');
+  if (currentWord.baseForm && currentWord.baseForm !== currentWord.word.toLowerCase()) {
+    baseFormEl.textContent = `(base: ${currentWord.baseForm})`;
+    baseFormEl.style.display = 'block';
+  } else {
+    baseFormEl.style.display = 'none';
+  }
+
   document.getElementById('practice-hint').style.display = 'none';
   document.getElementById('showHint').style.display = 'block';
   document.getElementById('userSentence').value = '';
@@ -418,14 +476,73 @@ function renderStats() {
   document.getElementById('stat-words').textContent = words.length;
   document.getElementById('stat-best').textContent = stats.longestStreak;
 
-  // Render achievements
+  // Render living achievements
+  renderLivingAchievements();
+}
+
+// Get current tier info for a living achievement
+function getCurrentTier(achievement, value) {
+  const tiers = achievement.tiers;
+  let currentTier = null;
+  let nextTier = tiers[0];
+
+  for (let i = 0; i < tiers.length; i++) {
+    if (value >= tiers[i].min) {
+      currentTier = tiers[i];
+      nextTier = tiers[i + 1] || null;
+    }
+  }
+
+  return { currentTier, nextTier, value };
+}
+
+// Render living achievements
+function renderLivingAchievements() {
   const achievementsList = document.getElementById('achievements-list');
-  achievementsList.innerHTML = Object.entries(ACHIEVEMENTS).map(([id, achievement]) => {
-    const unlocked = stats.achievements && stats.achievements.includes(id);
+
+  achievementsList.innerHTML = Object.entries(LIVING_ACHIEVEMENTS).map(([key, achievement]) => {
+    const value = achievement.getValue(stats, words);
+    const { currentTier, nextTier } = getCurrentTier(achievement, value);
+
+    const isLocked = !currentTier;
+    const tierName = currentTier ? currentTier.name : 'Locked';
+    const tierColor = currentTier ? currentTier.color : '#d1d5db';
+
+    // Calculate progress to next tier
+    let progressPercent = 0;
+    let progressText = '';
+
+    if (isLocked && nextTier) {
+      progressPercent = (value / nextTier.min) * 100;
+      progressText = `${value}/${nextTier.min}`;
+    } else if (nextTier) {
+      const prevMin = currentTier.min;
+      const range = nextTier.min - prevMin;
+      const progress = value - prevMin;
+      progressPercent = (progress / range) * 100;
+      progressText = `${value}/${nextTier.min}`;
+    } else {
+      // Max tier reached, keep counting
+      progressPercent = 100;
+      progressText = achievement.format(value);
+    }
+
     return `
-      <div class="achievement ${unlocked ? '' : 'locked'}" title="${achievement.name}">
-        <span class="achievement-icon">${achievement.icon}</span>
-        <span class="achievement-name">${achievement.name}</span>
+      <div class="living-achievement ${isLocked ? 'locked' : ''}" style="--tier-color: ${tierColor}">
+        <div class="achievement-icon-wrap">
+          <span class="achievement-icon">${achievement.icon}</span>
+          ${isLocked ? '<span class="lock-icon">🔒</span>' : ''}
+        </div>
+        <div class="achievement-info">
+          <span class="achievement-name">${achievement.name}</span>
+          <span class="achievement-tier">${tierName}</span>
+        </div>
+        <div class="achievement-progress">
+          <div class="progress-bar">
+            <div class="progress-fill" style="width: ${Math.min(progressPercent, 100)}%"></div>
+          </div>
+          <span class="progress-text">${progressText}</span>
+        </div>
       </div>
     `;
   }).join('');
