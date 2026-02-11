@@ -4,6 +4,7 @@
 let currentWord = null;
 let words = [];
 let stats = null;
+let searchQuery = '';
 
 // Living Achievement definitions - evolving tiers
 const LIVING_ACHIEVEMENTS = {
@@ -101,6 +102,23 @@ function setupEventListeners() {
     chrome.runtime.openOptionsPage();
   });
 
+  // Search input
+  const searchInput = document.getElementById('searchInput');
+  const clearSearch = document.getElementById('clearSearch');
+
+  searchInput.addEventListener('input', (e) => {
+    searchQuery = e.target.value.trim().toLowerCase();
+    clearSearch.style.display = searchQuery ? 'flex' : 'none';
+    renderWords();
+  });
+
+  clearSearch.addEventListener('click', () => {
+    searchInput.value = '';
+    searchQuery = '';
+    clearSearch.style.display = 'none';
+    renderWords();
+  });
+
   // Practice tab
   document.getElementById('startPractice').addEventListener('click', startPractice);
   document.getElementById('showHint').addEventListener('click', showHint);
@@ -134,17 +152,39 @@ function renderAll() {
 function renderWords() {
   const wordsList = document.getElementById('words-list');
   const emptyState = document.getElementById('words-empty');
+  const searchEmpty = document.getElementById('search-empty');
+  const searchContainer = document.querySelector('.search-container');
 
   if (!words || words.length === 0) {
     wordsList.innerHTML = '';
     emptyState.style.display = 'flex';
+    searchEmpty.style.display = 'none';
+    searchContainer.style.display = 'none';
     return;
   }
 
+  searchContainer.style.display = 'flex';
   emptyState.style.display = 'none';
 
+  // Filter by search query (match word or base form)
+  let filteredWords = words;
+  if (searchQuery) {
+    filteredWords = words.filter(w =>
+      w.word.toLowerCase().includes(searchQuery) ||
+      (w.baseForm && w.baseForm.toLowerCase().includes(searchQuery))
+    );
+  }
+
+  if (filteredWords.length === 0) {
+    wordsList.innerHTML = '';
+    searchEmpty.style.display = 'flex';
+    return;
+  }
+
+  searchEmpty.style.display = 'none';
+
   // Sort by most recent first
-  const sortedWords = [...words].sort((a, b) => b.createdAt - a.createdAt);
+  const sortedWords = [...filteredWords].sort((a, b) => b.createdAt - a.createdAt);
 
   wordsList.innerHTML = sortedWords.map(word => `
     <div class="word-card" data-id="${word.id}">
