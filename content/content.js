@@ -176,6 +176,29 @@ document.addEventListener('click', async (event) => {
         hideButton();
         saveButton.classList.remove('success');
       }, 1500);
+    } else if (response && response.duplicate) {
+      // Handle duplicate word - show friendly notification instead of error
+      saveButton.classList.remove('loading');
+      saveButton.classList.add('duplicate');
+      saveButton.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <span>Already saved</span>
+      `;
+
+      // Show a friendly notification with the existing word
+      const message = response.baseForm
+        ? `"${response.existingWord}" (same base form: ${response.baseForm})`
+        : `"${response.existingWord}"`;
+      showDuplicateNotification(message);
+
+      setTimeout(() => {
+        hideButton();
+        saveButton.classList.remove('duplicate');
+      }, 2000);
     } else {
       const errorMsg = response?.error || 'Unknown error - no response';
       console.error('[Word Learner] Save failed:', errorMsg);
@@ -239,6 +262,12 @@ document.addEventListener('keydown', async (event) => {
 
         if (response.success) {
           showNotification('Word saved!');
+        } else if (response.duplicate) {
+          // Handle duplicate - show friendly notification
+          const message = response.baseForm
+            ? `"${response.existingWord}" (same base form: ${response.baseForm})`
+            : `"${response.existingWord}"`;
+          showDuplicateNotification(message);
         } else {
           if (!response.logged) {
             await chrome.runtime.sendMessage({
@@ -272,6 +301,41 @@ function showNotification(message) {
     notification.classList.add('fade-out');
     setTimeout(() => notification.remove(), 300);
   }, 1500);
+}
+
+// Show duplicate word notification
+function showDuplicateNotification(existingWord) {
+  // Remove existing notification if any
+  const existing = document.getElementById('word-learner-duplicate-toast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.id = 'word-learner-duplicate-toast';
+  toast.innerHTML = `
+    <div class="wl-duplicate-content">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+      </svg>
+      <div class="wl-duplicate-text">
+        <strong>Already in your collection!</strong>
+        <span>${escapeHtml(existingWord)}</span>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(toast);
+
+  // Animate in
+  requestAnimationFrame(() => {
+    toast.classList.add('visible');
+  });
+
+  // Auto-dismiss after 3 seconds
+  setTimeout(() => {
+    if (document.body.contains(toast)) {
+      toast.classList.remove('visible');
+      setTimeout(() => toast.remove(), 300);
+    }
+  }, 3000);
 }
 
 // Show error with feedback option

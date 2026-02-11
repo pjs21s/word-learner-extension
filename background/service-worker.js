@@ -154,17 +154,24 @@ async function saveWord(word, context, sourceUrl) {
     const { words } = await chrome.storage.local.get('words');
     console.log('[Word Learner] Current words count:', words?.length);
 
-    // Check for duplicate
-    const exists = words.some(w => w.word.toLowerCase() === word.toLowerCase());
-    if (exists) {
-      console.log('[Word Learner] Word already exists');
-      return { success: false, error: 'Word already saved' };
+    // Check for exact duplicate
+    const exactMatch = words.find(w => w.word.toLowerCase() === word.toLowerCase());
+    if (exactMatch) {
+      console.log('[Word Learner] Word already exists (exact match)');
+      return { success: false, duplicate: true, existingWord: exactMatch.word };
     }
 
     // Extract base form using AI
     console.log('[Word Learner] Extracting base form...');
     const baseForm = await extractBaseForm(word, context);
     console.log('[Word Learner] Base form:', baseForm);
+
+    // Check for duplicate by base form (e.g., "went" when "go" exists)
+    const baseFormMatch = words.find(w => w.baseForm && w.baseForm.toLowerCase() === baseForm.toLowerCase());
+    if (baseFormMatch) {
+      console.log('[Word Learner] Word already exists (same base form):', baseFormMatch.word);
+      return { success: false, duplicate: true, existingWord: baseFormMatch.word, baseForm: baseForm };
+    }
 
     const newWord = {
       id: generateUUID(),
