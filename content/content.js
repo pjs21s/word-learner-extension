@@ -64,6 +64,13 @@ function hideButton() {
   }
 }
 
+// Check if text is English (basic Latin letters only)
+function isEnglishText(text) {
+  // Allow basic Latin letters, digits, hyphens, and apostrophes (e.g. "don't", "well-known")
+  // Rejects Korean, Chinese, Japanese, Arabic, Cyrillic, etc.
+  return /^[a-zA-Z'-]+(\s[a-zA-Z'-]+)*$/.test(text.trim());
+}
+
 // Get selected text
 function getSelectedText() {
   const selection = window.getSelection();
@@ -109,7 +116,7 @@ document.addEventListener('mouseup', (event) => {
 
   const selection = getSelectedText();
 
-  if (selection && selection.text.length > 0 && selection.text.length < 100) {
+  if (selection && selection.text.length > 0 && selection.text.length < 100 && isEnglishText(selection.text)) {
     positionButton(event.clientX, event.clientY);
   } else {
     hideButton();
@@ -249,7 +256,7 @@ document.addEventListener('click', async (event) => {
 document.addEventListener('keydown', async (event) => {
   if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'S') {
     const selection = getSelectedText();
-    if (selection && selection.text.length > 0) {
+    if (selection && selection.text.length > 0 && isEnglishText(selection.text)) {
       event.preventDefault();
 
       try {
