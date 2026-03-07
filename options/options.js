@@ -3,7 +3,7 @@
 // DOM Elements
 const dailyGoalInput = document.getElementById('dailyGoal');
 const goalButtons = document.querySelectorAll('.goal-btn');
-const targetLanguageSelect = document.getElementById('targetLanguage');
+const nativeLanguageSelect = document.getElementById('nativeLanguage');
 const exportDataBtn = document.getElementById('exportData');
 const clearDataBtn = document.getElementById('clearData');
 const saveSettingsBtn = document.getElementById('saveSettings');
@@ -31,8 +31,8 @@ async function loadSettings() {
   dailyGoalInput.value = currentGoal;
   updateGoalButtons(currentGoal);
 
-  if (settings?.targetLanguage) {
-    targetLanguageSelect.value = settings.targetLanguage;
+  if (settings?.nativeLanguage) {
+    nativeLanguageSelect.value = settings.nativeLanguage;
   }
 }
 
@@ -125,7 +125,7 @@ function updateGoalButtons(currentGoal) {
 // Save settings
 async function saveSettings() {
   const dailyGoal = parseInt(dailyGoalInput.value) || 5;
-  const targetLanguage = targetLanguageSelect.value;
+  const nativeLanguage = nativeLanguageSelect.value;
 
   // Validate daily goal
   if (dailyGoal < 1 || dailyGoal > 50) {
@@ -136,7 +136,7 @@ async function saveSettings() {
   // Save settings
   await chrome.storage.local.set({
     settings: {
-      targetLanguage
+      nativeLanguage
     }
   });
 
