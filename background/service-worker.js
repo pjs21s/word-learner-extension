@@ -142,6 +142,9 @@ async function handleMessage(message, sender) {
     case 'clearErrors':
       return await clearErrors();
 
+    case 'lookupWord':
+      return await lookupWord(message.word);
+
     default:
       return { error: 'Unknown action' };
   }
@@ -173,10 +176,16 @@ async function saveWord(word, context, sourceUrl) {
       return { success: false, duplicate: true, existingWord: baseFormMatch.word, baseForm: baseForm };
     }
 
+    // Generate meaning in user's native language
+    console.log('[Word Learner] Generating meaning...');
+    const meaning = await generateMeaning(word, context);
+    console.log('[Word Learner] Meaning:', meaning);
+
     const newWord = {
       id: generateUUID(),
       word: word,
       baseForm: baseForm,
+      meaning: meaning,
       context: context,
       sourceUrl: sourceUrl,
       createdAt: Date.now(),
@@ -202,6 +211,17 @@ async function saveWord(word, context, sourceUrl) {
 async function getWords() {
   const { words } = await chrome.storage.local.get('words');
   return words || [];
+}
+
+// Fast lookup (no AI) — exact word match or selected word is a saved word's base form
+async function lookupWord(word) {
+  const { words } = await chrome.storage.local.get('words');
+  if (!words) return null;
+  const lower = word.toLowerCase();
+  return words.find(w =>
+    w.word.toLowerCase() === lower ||
+    (w.baseForm && w.baseForm.toLowerCase() === lower)
+  ) || null;
 }
 
 async function deleteWord(id) {
@@ -410,6 +430,33 @@ Reply with ONLY the base form, nothing else. For example:
   } catch (error) {
     console.error('[Word Learner] extractBaseForm error:', error);
     return word.toLowerCase(); // Fallback on error
+  }
+}
+
+async function getNativeLanguage() {
+  const { settings } = await chrome.storage.local.get('settings');
+  return settings?.nativeLanguage || 'English';
+}
+
+async function generateMeaning(word, context) {
+  console.log('[Word Learner] generateMeaning called for:', word);
+  try {
+    const nativeLanguage = await getNativeLanguage();
+    console.log('[Word Learner] Native language:', nativeLanguage);
+
+    const prompt = nativeLanguage === 'English'
+      ? `Define the word "${word}" in simple English (1-2 sentences). Context: "${context}". Output only the definition.`
+      : `Translate and explain the word "${word}" in ${nativeLanguage}. Context: "${context}". Output only the translation/meaning in ${nativeLanguage}, nothing else.`;
+
+    const result = await promptAI(prompt);
+    console.log('[Word Learner] Meaning result:', result);
+    if (result.success) {
+      return result.content.trim();
+    }
+    return null; // No meaning if AI fails
+  } catch (error) {
+    console.error('[Word Learner] generateMeaning error:', error);
+    return null;
   }
 }
 

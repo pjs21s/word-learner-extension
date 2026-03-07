@@ -12,6 +12,7 @@ if (window.__wordLearnerInjected) {
 function initWordLearner() {
 
 let saveButton = null;
+let meaningCard = null;
 
 // Create the floating save button
 function createSaveButton() {
@@ -64,6 +65,51 @@ function hideButton() {
   }
 }
 
+// Show meaning card for an already-saved word near the selection
+function showMeaningCard(word, x, y) {
+  if (!meaningCard) {
+    meaningCard = document.createElement('div');
+    meaningCard.id = 'word-learner-meaning-card';
+    document.body.appendChild(meaningCard);
+  }
+
+  const baseLabel = word.baseForm && word.baseForm !== word.word.toLowerCase()
+    ? `<span class="wl-mc-base">→ ${escapeHtml(word.baseForm)}</span>`
+    : '';
+
+  meaningCard.innerHTML = `
+    <div class="wl-mc-header">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+      </svg>
+      <span class="wl-mc-word">${escapeHtml(word.word)}</span>${baseLabel}
+    </div>
+    ${word.meaning ? `<p class="wl-mc-meaning">${escapeHtml(word.meaning)}</p>` : ''}
+  `;
+
+  // Position near selection (same viewport-clamp logic as the save button)
+  const cardWidth = 240;
+  const cardHeight = 80;
+  const padding = 10;
+
+  let left = x;
+  let top = y + 20;
+
+  if (left + cardWidth > window.innerWidth - padding) left = window.innerWidth - cardWidth - padding;
+  if (left < padding) left = padding;
+  if (top + cardHeight > window.innerHeight - padding) top = y - cardHeight - 10;
+
+  meaningCard.style.left = `${left}px`;
+  meaningCard.style.top = `${top}px`;
+  meaningCard.style.display = 'block';
+}
+
+function hideMeaningCard() {
+  if (meaningCard) {
+    meaningCard.style.display = 'none';
+  }
+}
+
 // Check if text is English (basic Latin letters only)
 function isEnglishText(text) {
   // Allow basic Latin letters, digits, hyphens, and apostrophes (e.g. "don't", "well-known")
@@ -108,29 +154,45 @@ function getSelectedText() {
 }
 
 // Handle text selection
-document.addEventListener('mouseup', (event) => {
-  // Ignore if clicking the save button
-  if (saveButton && saveButton.contains(event.target)) {
-    return;
-  }
+document.addEventListener('mouseup', async (event) => {
+  // Ignore if clicking the save button or meaning card
+  if (saveButton && saveButton.contains(event.target)) return;
+  if (meaningCard && meaningCard.contains(event.target)) return;
 
   const selection = getSelectedText();
 
   if (selection && selection.text.length > 0 && selection.text.length < 100 && isEnglishText(selection.text)) {
-    positionButton(event.clientX, event.clientY);
+    // Fast storage lookup — show meaning card if word is already saved
+    try {
+      const saved = await chrome.runtime.sendMessage({ action: 'lookupWord', word: selection.text });
+      if (saved && saved.meaning) {
+        hideButton();
+        showMeaningCard(saved, event.clientX, event.clientY);
+      } else {
+        hideMeaningCard();
+        positionButton(event.clientX, event.clientY);
+      }
+    } catch (e) {
+      hideMeaningCard();
+      positionButton(event.clientX, event.clientY);
+    }
   } else {
     hideButton();
+    hideMeaningCard();
   }
 });
 
-// Handle click outside to hide button
+// Handle click outside to hide button and meaning card
 document.addEventListener('mousedown', (event) => {
-  if (saveButton && !saveButton.contains(event.target)) {
-    // Small delay to allow selection to complete
+  const outsideButton = !saveButton || !saveButton.contains(event.target);
+  const outsideCard = !meaningCard || !meaningCard.contains(event.target);
+
+  if (outsideButton && outsideCard) {
     setTimeout(() => {
       const selection = window.getSelection();
       if (!selection || selection.toString().trim().length === 0) {
         hideButton();
+        hideMeaningCard();
       }
     }, 10);
   }
