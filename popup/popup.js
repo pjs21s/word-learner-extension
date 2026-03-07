@@ -6,6 +6,17 @@ let words = [];
 let stats = null;
 let searchQuery = '';
 
+// Practice step state
+let currentStepIndex = 0;
+let stepResults = {};
+
+// Step registry - add/remove/reorder steps here only
+const PRACTICE_STEPS = [
+  { id: 'recall', label: 'Recall',     render: renderRecallStep },
+  { id: 'fill',   label: 'Fill Blank', render: renderFillStep   },
+  { id: 'write',  label: 'Write',      render: renderWriteStep  },
+];
+
 // Living Achievement definitions - evolving tiers
 const LIVING_ACHIEVEMENTS = {
   streak: {
@@ -121,18 +132,6 @@ function setupEventListeners() {
 
   // Practice tab
   document.getElementById('startPractice').addEventListener('click', startPractice);
-  document.getElementById('showHint').addEventListener('click', showHint);
-  document.getElementById('skipWord').addEventListener('click', skipWord);
-  document.getElementById('submitSentence').addEventListener('click', submitSentence);
-  document.getElementById('nextWord').addEventListener('click', nextWord);
-
-  // Enter key to submit
-  document.getElementById('userSentence').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      submitSentence();
-    }
-  });
 }
 
 // Load data from storage
@@ -166,12 +165,13 @@ function renderWords() {
   searchContainer.style.display = 'flex';
   emptyState.style.display = 'none';
 
-  // Filter by search query (match word or base form)
+  // Filter by search query (match word, base form, or meaning)
   let filteredWords = words;
   if (searchQuery) {
     filteredWords = words.filter(w =>
       w.word.toLowerCase().includes(searchQuery) ||
-      (w.baseForm && w.baseForm.toLowerCase().includes(searchQuery))
+      (w.baseForm && w.baseForm.toLowerCase().includes(searchQuery)) ||
+      (w.meaning && w.meaning.toLowerCase().includes(searchQuery))
     );
   }
 
@@ -209,6 +209,9 @@ function renderWords() {
           </button>
         </div>
       </div>
+      ${word.meaning ? `
+        <p class="word-meaning">${escapeHtml(word.meaning)}</p>
+      ` : ''}
       ${word.context && word.context !== word.word ? `
         <p class="word-context">"${escapeHtml(truncate(word.context, 100))}"</p>
       ` : ''}
@@ -337,174 +340,320 @@ async function startPractice() {
   currentWord = await chrome.runtime.sendMessage({ action: 'getRandomWord' });
 
   if (!currentWord) {
+    document.getElementById('practice-session').style.display = 'none';
+    document.getElementById('practice-setup').style.display = 'flex';
     return;
   }
+
+  currentStepIndex = 0;
+  stepResults = {};
 
   document.getElementById('practice-setup').style.display = 'none';
   document.getElementById('practice-session').style.display = 'flex';
-  document.getElementById('practice-feedback').style.display = 'none';
 
-  document.getElementById('practice-word-text').textContent = currentWord.word;
+  await renderCurrentStep();
+}
 
-  // Show base form if different from the original word
-  const baseFormEl = document.getElementById('practice-base-form');
-  if (currentWord.baseForm && currentWord.baseForm !== currentWord.word.toLowerCase()) {
-    baseFormEl.textContent = `(base: ${currentWord.baseForm})`;
-    baseFormEl.style.display = 'block';
+// Render the current step
+async function renderCurrentStep() {
+  renderStepIndicator();
+  await PRACTICE_STEPS[currentStepIndex].render(currentWord, stepResults);
+}
+
+// Render numbered step dots into #step-indicator
+function renderStepIndicator() {
+  const container = document.getElementById('step-indicator');
+  const html = PRACTICE_STEPS.map((step, i) => {
+    const isDone = i < currentStepIndex;
+    const isActive = i === currentStepIndex;
+    const dotClass = isDone ? 'step-dot done' : isActive ? 'step-dot active' : 'step-dot';
+    const label = isDone ? '✓' : (i + 1);
+    const line = i < PRACTICE_STEPS.length - 1 ? '<div class="step-line"></div>' : '';
+    return `<div class="${dotClass}" title="${escapeHtml(step.label)}">${label}</div>${line}`;
+  }).join('');
+  container.innerHTML = html;
+}
+
+// Save step result, advance to next step or finish
+async function advanceStep(result) {
+  stepResults[PRACTICE_STEPS[currentStepIndex].id] = result;
+  currentStepIndex++;
+  if (currentStepIndex < PRACTICE_STEPS.length) {
+    await renderCurrentStep();
   } else {
-    baseFormEl.style.display = 'none';
-  }
-
-  document.getElementById('practice-hint').style.display = 'none';
-  document.getElementById('showHint').style.display = 'block';
-  document.getElementById('userSentence').value = '';
-  document.getElementById('userSentence').focus();
-
-  // Pre-load example sentence if available
-  if (currentWord.exampleSentence) {
-    document.getElementById('practice-example').textContent = currentWord.exampleSentence;
+    await finishWord();
   }
 }
 
-// Show hint (example sentence)
-async function showHint() {
-  const hintDiv = document.getElementById('practice-hint');
-  const hintBtn = document.getElementById('showHint');
-  const exampleEl = document.getElementById('practice-example');
-
-  hintBtn.style.display = 'none';
-
-  if (currentWord.exampleSentence) {
-    exampleEl.textContent = currentWord.exampleSentence;
-    hintDiv.style.display = 'block';
-  } else {
-    // Generate example sentence
-    exampleEl.textContent = 'Generating...';
-    hintDiv.style.display = 'block';
-
-    const response = await chrome.runtime.sendMessage({
-      action: 'generateSentence',
-      word: currentWord.word
-    });
-
-    if (response.success) {
-      exampleEl.textContent = response.content;
-      currentWord.exampleSentence = response.content;
-    } else {
-      exampleEl.textContent = response.error || 'Failed to generate example';
-    }
-  }
+// Skip to a fresh word at step 1
+async function skipToNextWord() {
+  await startPractice();
 }
 
-// Skip current word
-async function skipWord() {
-  currentWord = await chrome.runtime.sendMessage({ action: 'getRandomWord' });
+// Record practice and load next word (or return to setup if goal met)
+async function finishWord() {
+  const writeResult = stepResults.write;
+  const rating = writeResult ? writeResult.rating : 'good';
 
-  if (currentWord) {
-    document.getElementById('practice-word-text').textContent = currentWord.word;
-    document.getElementById('practice-hint').style.display = 'none';
-    document.getElementById('showHint').style.display = 'block';
-    document.getElementById('practice-feedback').style.display = 'none';
-    document.getElementById('userSentence').value = '';
-    document.getElementById('userSentence').focus();
-
-    if (currentWord.exampleSentence) {
-      document.getElementById('practice-example').textContent = currentWord.exampleSentence;
-    }
-  }
-}
-
-// Submit sentence for evaluation
-async function submitSentence() {
-  const userSentence = document.getElementById('userSentence').value.trim();
-
-  if (!userSentence) {
-    return;
-  }
-
-  const submitBtn = document.getElementById('submitSentence');
-  submitBtn.disabled = true;
-  submitBtn.innerHTML = '<span class="loading-spinner"></span> Evaluating...';
-
-  const response = await chrome.runtime.sendMessage({
-    action: 'evaluateSentence',
-    userSentence: userSentence,
-    word: currentWord.word
+  const practiceResult = await chrome.runtime.sendMessage({
+    action: 'recordPractice',
+    wordId: currentWord.id,
+    rating: rating
   });
 
-  submitBtn.disabled = false;
-  submitBtn.textContent = 'Submit';
-
-  if (response.success && response.evaluation) {
-    showFeedback(response.evaluation);
-
-    // Record practice
-    const practiceResult = await chrome.runtime.sendMessage({
-      action: 'recordPractice',
-      wordId: currentWord.id,
-      rating: response.evaluation.rating
-    });
-
-    if (practiceResult.stats) {
-      stats = practiceResult.stats;
-    }
-  } else {
-    showFeedback({
-      isCorrect: false,
-      rating: 'needs_improvement',
-      feedback: response.error || 'Failed to evaluate sentence. Please try again.',
-      suggestion: null
-    });
+  if (practiceResult.stats) {
+    stats = practiceResult.stats;
   }
-}
 
-// Show feedback
-function showFeedback(evaluation) {
-  const feedbackDiv = document.getElementById('practice-feedback');
-  const iconEl = feedbackDiv.querySelector('.feedback-icon');
-  const ratingEl = feedbackDiv.querySelector('.feedback-rating');
-  const textEl = feedbackDiv.querySelector('.feedback-text');
-  const suggestionEl = feedbackDiv.querySelector('.feedback-suggestion');
-
-  // Set icon and rating
-  const ratingConfig = {
-    excellent: { icon: '🌟', text: 'Excellent!' },
-    good: { icon: '👍', text: 'Good job!' },
-    needs_improvement: { icon: '💡', text: 'Keep practicing!' }
-  };
-
-  const config = ratingConfig[evaluation.rating] || ratingConfig.needs_improvement;
-  iconEl.textContent = config.icon;
-  ratingEl.textContent = config.text;
-  ratingEl.className = `feedback-rating ${evaluation.rating}`;
-
-  textEl.textContent = evaluation.feedback;
-  suggestionEl.textContent = evaluation.suggestion || '';
-
-  // Hide input controls, show feedback
-  document.querySelector('.practice-input').style.display = 'none';
-  document.querySelector('.practice-actions').style.display = 'none';
-  document.getElementById('showHint').style.display = 'none';
-  feedbackDiv.style.display = 'block';
-}
-
-// Next word
-async function nextWord() {
-  // Check if daily goal is met
   if (stats && stats.todaySentences >= stats.dailyGoal) {
-    // Show completion message
     document.getElementById('practice-session').style.display = 'none';
     document.getElementById('practice-setup').style.display = 'flex';
     updateProgressRing();
     return;
   }
 
-  // Reset UI
-  document.querySelector('.practice-input').style.display = 'flex';
-  document.querySelector('.practice-actions').style.display = 'flex';
-
-  // Get next word
   await startPractice();
+}
+
+// ── Step render functions ──────────────────────────────────────────────────
+
+function renderRecallStep(word, _stepResults) {
+  const content = document.getElementById('step-content');
+  content.innerHTML = `
+    <div class="recall-step">
+      <div class="recall-word-display">
+        <div class="recall-word">${escapeHtml(word.word)}</div>
+        ${word.baseForm && word.baseForm !== word.word.toLowerCase()
+          ? `<div class="recall-base-form">(base: ${escapeHtml(word.baseForm)})</div>`
+          : ''}
+      </div>
+      <button id="revealBtn" class="btn btn-secondary">Reveal Meaning</button>
+      <div id="recall-reveal" class="recall-reveal" style="display: none;">
+        ${word.meaning ? `
+          <div class="recall-meaning">
+            <div class="recall-meaning-label">Meaning</div>
+            <p>${escapeHtml(word.meaning)}</p>
+          </div>
+        ` : ''}
+        ${word.context && word.context !== word.word ? `
+          <div class="recall-context">
+            <div class="recall-context-label">Original context</div>
+            <p>"${escapeHtml(truncate(word.context, 120))}"</p>
+          </div>
+        ` : ''}
+        <div class="recall-rating-buttons">
+          <button id="forgotBtn" class="btn btn-secondary">I forgot</button>
+          <button id="rememberedBtn" class="btn btn-primary">I remembered</button>
+        </div>
+      </div>
+      <button class="skip-link" id="skipLink">Skip word</button>
+    </div>
+  `;
+
+  document.getElementById('revealBtn').addEventListener('click', () => {
+    document.getElementById('recall-reveal').style.display = 'flex';
+    document.getElementById('revealBtn').style.display = 'none';
+  });
+
+  document.getElementById('forgotBtn').addEventListener('click', () => advanceStep({ remembered: false }));
+  document.getElementById('rememberedBtn').addEventListener('click', () => advanceStep({ remembered: true }));
+  document.getElementById('skipLink').addEventListener('click', skipToNextWord);
+}
+
+async function renderFillStep(word, _stepResults) {
+  const content = document.getElementById('step-content');
+
+  let sentence = word.exampleSentence;
+
+  if (!sentence) {
+    content.innerHTML = `
+      <div class="fill-step">
+        <div class="fill-loading">Generating sentence… <span class="loading-spinner"></span></div>
+      </div>
+    `;
+
+    const response = await chrome.runtime.sendMessage({ action: 'generateSentence', word: word.word });
+
+    if (response.success) {
+      sentence = response.content;
+      word.exampleSentence = sentence;
+    } else {
+      // Skip this step on error
+      await advanceStep({ correct: null, error: true });
+      return;
+    }
+  }
+
+  // Replace word/base form with blank (client-side)
+  const targets = [word.word];
+  if (word.baseForm && word.baseForm !== word.word.toLowerCase()) targets.push(word.baseForm);
+  const wordRegex = new RegExp(`\\b(${targets.map(escapeRegex).join('|')})\\b`, 'gi');
+  const sentenceWithBlank = sentence.replace(wordRegex, '___');
+
+  // Build display sentence with styled blank span
+  const displaySentence = escapeHtml(sentenceWithBlank).replace('___', '<span class="fill-blank">___</span>');
+
+  content.innerHTML = `
+    <div class="fill-step">
+      <div class="fill-instruction">Fill in the blank:</div>
+      <div class="fill-sentence">${displaySentence}</div>
+      <div class="fill-input-row">
+        <input type="text" id="fillInput" class="fill-input" placeholder="Type the word…"
+               autocomplete="off" autocorrect="off" spellcheck="false">
+        <button id="checkBtn" class="btn btn-primary">Check</button>
+      </div>
+      <div id="fill-result" class="fill-result" style="display: none;"></div>
+      <button class="skip-link" id="skipLink">Skip word</button>
+    </div>
+  `;
+
+  const input = document.getElementById('fillInput');
+  input.focus();
+
+  let checked = false;
+  let isCorrect = false;
+
+  const checkAnswer = async () => {
+    if (checked) {
+      await advanceStep({ correct: isCorrect, userAnswer: input.value.trim() });
+      return;
+    }
+
+    const userAnswer = input.value.trim().toLowerCase();
+    const correctAnswers = [word.word.toLowerCase()];
+    if (word.baseForm) correctAnswers.push(word.baseForm.toLowerCase());
+    isCorrect = correctAnswers.includes(userAnswer);
+    checked = true;
+
+    const resultEl = document.getElementById('fill-result');
+    resultEl.style.display = 'block';
+    resultEl.className = `fill-result ${isCorrect ? 'correct' : 'incorrect'}`;
+    resultEl.textContent = isCorrect
+      ? `Correct! The word is "${word.word}".`
+      : `The answer was "${word.word}". You wrote "${input.value.trim()}".`;
+
+    document.getElementById('checkBtn').textContent = 'Next →';
+    input.disabled = true;
+  };
+
+  document.getElementById('checkBtn').addEventListener('click', checkAnswer);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') checkAnswer(); });
+  document.getElementById('skipLink').addEventListener('click', skipToNextWord);
+}
+
+async function renderWriteStep(word, _stepResults) {
+  const content = document.getElementById('step-content');
+
+  content.innerHTML = `
+    <div class="write-step">
+      <div class="write-word-display">
+        <label class="write-word-label">Write a sentence using:</label>
+        <h2 class="write-word">${escapeHtml(word.word)}</h2>
+        ${word.baseForm && word.baseForm !== word.word.toLowerCase()
+          ? `<span class="write-base-form">(base: ${escapeHtml(word.baseForm)})</span>`
+          : ''}
+      </div>
+      <div class="write-input">
+        <textarea id="writeTextarea" placeholder="Type your sentence here…" rows="3"></textarea>
+      </div>
+      <div class="write-actions">
+        <button id="writeHintBtn" class="btn btn-secondary btn-small">Show Hint</button>
+        <button id="writeSubmitBtn" class="btn btn-primary">Submit</button>
+      </div>
+      <div id="write-hint" class="practice-hint" style="display: none;">
+        <label>Example sentence:</label>
+        <p id="write-example"></p>
+      </div>
+      <div id="write-feedback" class="practice-feedback" style="display: none;"></div>
+      <button class="skip-link" id="skipLink">Skip word</button>
+    </div>
+  `;
+
+  const textarea = document.getElementById('writeTextarea');
+  textarea.focus();
+
+  if (word.exampleSentence) {
+    document.getElementById('write-example').textContent = word.exampleSentence;
+  }
+
+  document.getElementById('writeHintBtn').addEventListener('click', async () => {
+    const hintDiv = document.getElementById('write-hint');
+    const hintBtn = document.getElementById('writeHintBtn');
+    const exampleEl = document.getElementById('write-example');
+
+    hintBtn.style.display = 'none';
+
+    if (word.exampleSentence) {
+      exampleEl.textContent = word.exampleSentence;
+      hintDiv.style.display = 'block';
+    } else {
+      exampleEl.textContent = 'Generating…';
+      hintDiv.style.display = 'block';
+
+      const response = await chrome.runtime.sendMessage({ action: 'generateSentence', word: word.word });
+      if (response.success) {
+        exampleEl.textContent = response.content;
+        word.exampleSentence = response.content;
+      } else {
+        exampleEl.textContent = response.error || 'Failed to generate example';
+      }
+    }
+  });
+
+  const submitHandler = async () => {
+    const userSentence = textarea.value.trim();
+    if (!userSentence) return;
+
+    const submitBtn = document.getElementById('writeSubmitBtn');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="loading-spinner"></span> Evaluating…';
+
+    const response = await chrome.runtime.sendMessage({
+      action: 'evaluateSentence',
+      userSentence,
+      word: word.word
+    });
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Submit';
+
+    const evaluation = (response.success && response.evaluation)
+      ? response.evaluation
+      : { isCorrect: false, rating: 'needs_improvement', feedback: response.error || 'Failed to evaluate. Please try again.', suggestion: null };
+
+    const ratingConfig = {
+      excellent:         { icon: '🌟', text: 'Excellent!' },
+      good:              { icon: '👍', text: 'Good job!' },
+      needs_improvement: { icon: '💡', text: 'Keep practicing!' }
+    };
+    const cfg = ratingConfig[evaluation.rating] || ratingConfig.needs_improvement;
+
+    const feedbackDiv = document.getElementById('write-feedback');
+    feedbackDiv.innerHTML = `
+      <div class="feedback-header">
+        <span class="feedback-icon">${cfg.icon}</span>
+        <span class="feedback-rating ${evaluation.rating}">${cfg.text}</span>
+      </div>
+      <p class="feedback-text">${escapeHtml(evaluation.feedback)}</p>
+      ${evaluation.suggestion ? `<p class="feedback-suggestion">${escapeHtml(evaluation.suggestion)}</p>` : ''}
+      <button id="nextWordBtn" class="btn btn-primary" style="width: 100%; margin-top: 8px;">Next Word</button>
+    `;
+    feedbackDiv.style.display = 'block';
+
+    document.querySelector('.write-step .write-input').style.display = 'none';
+    document.querySelector('.write-step .write-actions').style.display = 'none';
+    document.getElementById('skipLink').style.display = 'none';
+
+    document.getElementById('nextWordBtn').addEventListener('click', () => {
+      advanceStep({ rating: evaluation.rating, userSentence });
+    });
+  };
+
+  document.getElementById('writeSubmitBtn').addEventListener('click', submitHandler);
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitHandler(); }
+  });
+  document.getElementById('skipLink').addEventListener('click', skipToNextWord);
 }
 
 // Render stats
@@ -598,6 +747,10 @@ function escapeHtml(text) {
 function truncate(text, maxLength) {
   if (text.length <= maxLength) return text;
   return text.substring(0, maxLength - 3) + '...';
+}
+
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // Check AI availability and display status

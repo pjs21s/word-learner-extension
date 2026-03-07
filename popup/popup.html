@@ -89,36 +89,8 @@
       </div>
 
       <div id="practice-session" class="practice-session" style="display: none;">
-        <div class="practice-word">
-          <label>Word to use:</label>
-          <h2 id="practice-word-text"></h2>
-          <span id="practice-base-form" class="practice-base-form" style="display:none;"></span>
-        </div>
-        <div class="practice-hint" id="practice-hint" style="display: none;">
-          <label>Example sentence:</label>
-          <p id="practice-example"></p>
-        </div>
-        <button id="showHint" class="btn btn-secondary btn-small">Show Hint</button>
-
-        <div class="practice-input">
-          <label for="userSentence">Write a sentence using this word:</label>
-          <textarea id="userSentence" placeholder="Type your sentence here..." rows="3"></textarea>
-        </div>
-
-        <div class="practice-actions">
-          <button id="skipWord" class="btn btn-secondary">Skip</button>
-          <button id="submitSentence" class="btn btn-primary">Submit</button>
-        </div>
-
-        <div id="practice-feedback" class="practice-feedback" style="display: none;">
-          <div class="feedback-header">
-            <span class="feedback-icon"></span>
-            <span class="feedback-rating"></span>
-          </div>
-          <p class="feedback-text"></p>
-          <p class="feedback-suggestion"></p>
-          <button id="nextWord" class="btn btn-primary">Next Word</button>
-        </div>
+        <div id="step-indicator" class="step-indicator"></div>
+        <div id="step-content" class="step-content"></div>
       </div>
     </section>
 
